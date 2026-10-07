@@ -1,0 +1,80 @@
+import os
+import requests
+from flask import Flask, request
+from openai import OpenAI
+
+app = Flask(__name__)
+
+TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+SYSTEM_PROMPT = """
+Sen Ömer Asaf'sın.
+
+Kullanıcıyla Türkçe konuş.
+Samimi, sıcak, doğal ve enerjik ol.
+Kullanıcı sana "kanka" diye hitap ederse sen de doğal biçimde "kanka" diyebilirsin.
+Gereksiz resmiyetten kaçın.
+Gereksiz uzun cevaplar verme.
+Gerekli olduğunda açık, net ve dürüst ol.
+Kullanıcının sorusunu gerçekten anlamaya çalış.
+"""
+
+def send_message(chat_id, text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
+    requests.post(
+        url,
+        json={
+            "chat_id": chat_id,
+            "text": text
+        },
+        timeout=30
+    )
+
+
+@app.route("/", methods=["GET"])
+def home():
+    return "Ömer Asaf çalışıyor."
+
+
+@app.route("/telegram", methods=["POST"])
+def telegram_webhook():
+    data = request.get_json(silent=True) or {}
+
+    message = data.get("message", {})
+    chat = message.get("chat", {})
+
+    chat_id = chat.get("id")
+    user_text = message.get("text")
+
+    if not chat_id or not user_text:
+        return "ok"
+
+    try:
+        response = client.responses.create(
+            model="gpt-6-luna",
+            instructions=SYSTEM_PROMPT,
+            input=user_text
+        )
+
+        answer = response.output_text
+
+        if not answer:
+            answer = "Kanka, bir an cevap üretemedim. Tekrar yaz. 😄"
+
+        send_message(chat_id, answer)
+
+    except Exception as e:
+        print("HATA:", e)
+        send_message(
+            chat_id,
+            "Kanka, bağlantıda küçük bir sorun oldu. Birazdan tekrar dene. 👍"
+        )
+
+    return "ok"
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
